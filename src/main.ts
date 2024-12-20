@@ -14,7 +14,7 @@ async function runOllamaWithMcpTools(model: string, initialPrompt: string) {
     transport = mcpClientResult.transport;
 
     const mcpTools = await fetchTools(client);
-    console.log("\n📚 Available MCP Tools:", JSON.stringify(mcpTools, null, 2));
+    // console.log("\n📚 Available MCP Tools:", JSON.stringify(mcpTools, null, 2));
 
     if (!mcpTools) {
       console.log("❌ No tools fetched from MCP.");
@@ -22,10 +22,6 @@ async function runOllamaWithMcpTools(model: string, initialPrompt: string) {
     }
 
     const ollamaTools = convertToOpenaiTools(mcpTools);
-    // console.log(
-    //   "\n🛠️ Converted Ollama Tools:",
-    //   JSON.stringify(ollamaTools, null, 2)
-    // );
 
     console.log("\n🚀 Starting task with prompt:", initialPrompt);
 
@@ -52,7 +48,7 @@ async function runOllamaWithMcpTools(model: string, initialPrompt: string) {
 }
 
 // Open-ended prompt that lets the model decide how to solve the task
-const initialPrompt = `Tell me what the file stored in 'test-files' says.`;
+const initialPrompt = `Tell me what the file in the test-file folder says`;
 
 runOllamaWithMcpTools("qwen2.5:latest", initialPrompt).catch((error) =>
   console.error("An error occurred:", error)
