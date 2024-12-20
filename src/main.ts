@@ -48,7 +48,8 @@ async function runOllamaWithMcpTools(model: string, initialPrompt: string) {
 }
 
 // Open-ended prompt that lets the model decide how to solve the task
-const initialPrompt = `Tell me what the file in the test-file folder says`;
+// const initialPrompt = `Tell me what the file in the test-file folder says`;
+const initialPrompt = `create a file in the test-file folder with the content "Hello, world!"`;
 
 runOllamaWithMcpTools("qwen2.5:latest", initialPrompt).catch((error) =>
   console.error("An error occurred:", error)

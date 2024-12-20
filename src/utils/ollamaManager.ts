@@ -18,7 +18,6 @@ export class OllamaManager {
     this.client = client;
     this.tools = tools;
 
-    // Initialize manager with simpler, more direct prompt
     this.managerMessages = [
       {
         role: "system",
@@ -32,14 +31,14 @@ Your response must be JSON with:
 }
 
 Key points:
-- If the Core Task is answered, mark it END
-- If the worker has not completed the task then mark it CONTINUE`,
+- If the Core Task is answered, mark it END and include the answer in reasoning
+- If the worker has not completed the task then mark it CONTINUE
+- If there's an error understanding or executing the task, mark it ERROR`,
       },
     ];
   }
 
   async initialize() {
-    // Get allowed directories
     const dirResponse = await callToolWithTimeout(
       this.client,
       "list_allowed_directories",
@@ -47,7 +46,6 @@ Key points:
     );
     const allowedDirs = (dirResponse as any)?.content || [];
 
-    // Initialize worker with simpler prompt
     this.workerMessages = [
       {
         role: "system",
@@ -56,8 +54,9 @@ Key points:
         )}
 
 Guidelines:
-- use \\ or / to separate directories
-- use list_directory to verify the names of files in a directory 
+- Use list_directory first to verify files
+- Use exact filenames from directory listings
+- Build paths carefully based on directory contents
 
 Available tools:
 ${this.tools
@@ -78,24 +77,31 @@ ${this.tools
       content: initialPrompt,
     });
 
-    while (true) {
+    let iterationCount = 0;
+    const MAX_ITERATIONS = 3;
+
+    while (iterationCount < MAX_ITERATIONS) {
       try {
-        // Get worker's response
+        console.log(`Attempt ${iterationCount + 1}/${MAX_ITERATIONS}`);
+        
         const workerResponse = await handleWorkerResponse(
           this.model,
           this.workerMessages,
           this.tools,
           this.client
         );
-        console.log("Worker response received");
 
-        // Add worker's response to manager's context
+        if (!workerResponse || !workerResponse.content) {
+          throw new Error("No response from worker");
+        }
+
+        console.log("Worker response received:", workerResponse.content);
+
         this.managerMessages.push({
           role: "user",
           content: `Worker's response: ${workerResponse.content}`,
         });
 
-        // Get manager's evaluation
         const managerResponse = await getManagerResponse(
           this.model,
           this.managerMessages
@@ -107,10 +113,9 @@ ${this.tools
         }
 
         if (managerResponse.status === "ERROR") {
-          throw new Error(managerResponse.reasoning);
+          throw new Error(managerResponse.reasoning || "Unknown error occurred");
         }
 
-        // Continue only if absolutely necessary
         if (managerResponse.nextPrompt) {
           console.log("Continuing with:", managerResponse.nextPrompt);
           this.workerMessages.push({
@@ -118,11 +123,18 @@ ${this.tools
             content: managerResponse.nextPrompt,
           });
         }
-      } catch (error) {
+
+        iterationCount++;
+      } catch (error: unknown) {
         console.error("Error in task processing:", error);
-        return `Error: ${error.message}\n<END>`;
+        if (error instanceof Error) {
+          return `Error: ${error.message}\n<END>`;
+        }
+        return `Error: ${String(error)}\n<END>`;
       }
     }
+
+    return `Error: Reached maximum number of attempts (${MAX_ITERATIONS})\n<END>`;
   }
 }
 

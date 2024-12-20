@@ -7,12 +7,11 @@
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
-  "include": [
-    "*.ts",
-    "dont look at these/file_system_example/client.ts",
-    "src/langgraphexample.ts"
-  ],
+  "include": ["*.ts", "src/**/*.ts"],
   "exclude": ["node_modules"]
 }
