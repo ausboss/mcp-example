@@ -2,18 +2,22 @@
   "name": "mcp-example",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
+  "main": "src/main.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "tsx client.ts"
+    "start": "tsx src/main.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@langchain/langgraph": "^0.2.34",
+    "@langchain/ollama": "^0.1.4",
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@modelcontextprotocol/server-filesystem": "^0.6.2"
+    "@modelcontextprotocol/server-filesystem": "^0.6.2",
+    "axios": "^1.7.9",
+    "ollama": "^0.5.11"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",

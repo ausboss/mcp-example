@@ -9,6 +9,10 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist"
   },
-  "include": ["*.ts"],
+  "include": [
+    "*.ts",
+    "dont look at these/file_system_example/client.ts",
+    "src/langgraphexample.ts"
+  ],
   "exclude": ["node_modules"]
 }

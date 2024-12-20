@@ -6,8 +6,16 @@ import {
   ListToolsResultSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { ChildProcess } from "child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+// Add type for transport's childProcess
+declare module "@modelcontextprotocol/sdk/client/stdio.js" {
+  interface StdioClientTransport {
+    childProcess: ChildProcess;
+  }
+}
 
 // Helper function to find node_modules path
 async function getServerPath() {
@@ -84,8 +92,24 @@ async function callToolWithTimeout(
 }
 
 async function main() {
-  let transport;
-  let client;
+  let transport: StdioClientTransport | undefined;
+  let client: Client | undefined;
+  let serverProcess: ChildProcess | undefined;
+
+  // Handle cleanup on SIGINT (Ctrl+C)
+  process.on("SIGINT", async () => {
+    console.log("\nReceived SIGINT. Cleaning up...");
+    if (client) {
+      await client.close();
+    }
+    if (transport) {
+      await transport.close();
+    }
+    if (serverProcess) {
+      serverProcess.kill();
+    }
+    process.exit(0);
+  });
 
   try {
     // Create test directory if it doesn't exist
@@ -112,6 +136,21 @@ async function main() {
         )
       ) as Record<string, string>,
     });
+
+    // Store reference to the server process
+    serverProcess = transport.childProcess;
+
+    // Handle server process events
+    if (serverProcess) {
+      serverProcess.on("error", (error: Error) => {
+        console.error("Server process error:", error);
+      });
+
+      serverProcess.on("exit", (code: number | null) => {
+        console.log("Server process exited with code:", code);
+        process.exit(0);
+      });
+    }
 
     client = new Client(
       {
@@ -158,12 +197,17 @@ async function main() {
   } catch (error) {
     console.error("Error:", error);
   } finally {
+    console.log("Cleaning up...");
     if (client) {
       await client.close();
     }
     if (transport) {
       await transport.close();
     }
+    if (serverProcess) {
+      serverProcess.kill();
+    }
+    process.exit(0);
   }
 }
 
