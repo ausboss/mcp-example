@@ -2,7 +2,6 @@ import * as fs from "fs";
 import * as path from "path";
 
 import {
-  CallToolResultSchema,
   ListToolsResultSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
@@ -45,44 +44,6 @@ async function getServerPath() {
   );
 }
 
-// Helper function to handle tool calls with timeout
-async function callToolWithTimeout(
-  client: Client,
-  name: string,
-  args: any,
-  timeoutMs = 30000
-) {
-  const toolCallPromise = client.request(
-    {
-      method: "tools/call",
-      params: {
-        name,
-        arguments: args,
-      },
-    },
-    // Assuming you have a schema for the tool call result
-    CallToolResultSchema
-  );
-
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(
-      () => reject(new Error(`Tool call timed out after ${timeoutMs}ms`)),
-      timeoutMs
-    );
-  });
-
-  try {
-    const result = await Promise.race([toolCallPromise, timeoutPromise]);
-    return result;
-  } catch (error) {
-    throw new Error(
-      `Tool call failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-}
-
 async function main() {
   let transport;
   let client;
@@ -93,14 +54,6 @@ async function main() {
     if (!fs.existsSync(testDir)) {
       fs.mkdirSync(testDir, { recursive: true });
     }
-
-    // Create a test file with some content
-    const testFile = path.join(testDir, "test.txt");
-    const testContent =
-      "Hello from MCP filesystem server with timestamps:\n" +
-      `Created at: ${new Date().toISOString()}`;
-    fs.writeFileSync(testFile, testContent);
-    console.log("Created test file:", testFile);
 
     const serverPath = await getServerPath();
     transport = new StdioClientTransport({
@@ -122,9 +75,9 @@ async function main() {
         capabilities: {
           tools: {
             call: true,
-            list: true,
-          },
-        },
+            list: true
+          }
+        }
       }
     );
 
@@ -139,28 +92,9 @@ async function main() {
     );
     console.log("Available tools:", toolsResponse);
 
-    // Test the read_file tool
-    console.log("\nTesting read_file tool...");
-    const readFileResult = (await callToolWithTimeout(client, "read_file", {
-      path: testFile,
-    })) as { content: any[] };
-
-    // Extract text content from the response
-    let content = "";
-    if (readFileResult.content && Array.isArray(readFileResult.content)) {
-      content = (readFileResult as { content: any[] }).content
-        .filter((item: any) => item.type === "text")
-        .map((item: any) => item.text)
-        .join("\n");
-    }
-
-    console.log("\nFile content:", content);
   } catch (error) {
     console.error("Error:", error);
   } finally {
-    if (client) {
-      await client.close();
-    }
     if (transport) {
       await transport.close();
     }
