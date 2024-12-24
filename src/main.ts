@@ -1,20 +1,20 @@
 // main.ts
 
-import { convertToOpenaiTools } from "./utils/toolHelpers.js";
+import { convertToOpenaiTools, fetchTools } from "./utils/toolHelpers.js";
+
 import { createMcpClient } from "./utils/mcpClient.js";
-import { fetchTools } from "./utils/toolHelpers.js";
 import { processOllamaToolCalls } from "./utils/ollamaHelpers.js";
 
-async function runOllamaWithMcpTools(model: string, initialPrompt: string) {
-  let client, transport;
+async function runOllamaWithMcpTools(model: string, prompt: string) {
+  let client;
+  let transport;
 
   try {
-    const mcpClientResult = await createMcpClient();
-    client = mcpClientResult.client;
-    transport = mcpClientResult.transport;
+    const mcpResult = await createMcpClient("./mcp-config.json", "filesystem");
+    client = mcpResult.client;
+    transport = mcpResult.transport;
 
     const mcpTools = await fetchTools(client);
-    // console.log("\n📚 Available MCP Tools:", JSON.stringify(mcpTools, null, 2));
 
     if (!mcpTools) {
       console.log("❌ No tools fetched from MCP.");
@@ -23,22 +23,22 @@ async function runOllamaWithMcpTools(model: string, initialPrompt: string) {
 
     const ollamaTools = convertToOpenaiTools(mcpTools);
 
-    console.log("\n🚀 Starting task with prompt:", initialPrompt);
+    console.log("\n🚀 Starting task with prompt:", prompt);
 
-    const result = await processOllamaToolCalls(
+    const processResult = await processOllamaToolCalls(
       model,
-      initialPrompt,
+      prompt,
       ollamaTools,
       client
     );
 
-    if (result.endsWith("<END>")) {
+    if (processResult.endsWith("<END>")) {
       console.log("\n✅ Task completed successfully!");
-      console.log("📄 Final result:", result.replace("<END>", ""));
+      console.log("📄 Final result:", processResult.replace("<END>", ""));
     } else {
       console.log("\n⚠️ Task ended without proper completion marker");
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("\n❌ An error occurred:", error);
   } finally {
     if (client) await client.close();
@@ -47,10 +47,8 @@ async function runOllamaWithMcpTools(model: string, initialPrompt: string) {
   }
 }
 
-// Open-ended prompt that lets the model decide how to solve the task
-// const initialPrompt = `Tell me what the file in the test-file folder says`;
-const initialPrompt = `create a file in the test-file folder with the content "Hello, world!"`;
-
-runOllamaWithMcpTools("qwen2.5:latest", initialPrompt).catch((error) =>
-  console.error("An error occurred:", error)
-);
+// Example usage:
+runOllamaWithMcpTools(
+  "qwen2.5:latest",
+  "create a file with content 'Hello, world!'"
+).catch((error) => console.error("An error occurred:", error));

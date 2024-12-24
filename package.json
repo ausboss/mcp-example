@@ -5,7 +5,8 @@
   "main": "src/main.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
