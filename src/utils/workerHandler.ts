@@ -1,24 +1,10 @@
 // workerHandler.ts
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { ModelResponse } from "./types/ollamaTypes.js";
-import { callToolWithTimeout } from "./toolUtils.js";
-import { formatToolResponse } from "./toolHelpers.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index";
+import { ModelResponse } from "./types/ollamaTypes";
+import { handleToolCall } from "./toolHelpers";
 import ollama from "ollama";
-
-interface Message {
-  content: string;
-  tool_calls?: Array<{
-    function: {
-      name: string;
-      arguments: any;
-    };
-  }>;
-}
-
-interface ToolResponse {
-  content: any;
-}
+import { parseToolResponse } from "./toolHelpers";
 
 export async function handleWorkerResponse(
   model: string,
@@ -52,28 +38,24 @@ export async function handleWorkerResponse(
 
     const toolCalls = response.message.tool_calls || [];
 
+    // Use parseToolResponse as a fallback for inline tool calls
+    if (response.message.content) {
+      const parsedTool = parseToolResponse(response.message.content);
+      if (parsedTool) {
+        toolCalls.push({
+          function: {
+            name: parsedTool.function,
+            arguments: parsedTool.arguments,
+          },
+        });
+      }
+    }
+
     if (toolCalls.length > 0) {
       console.log(`Processing ${toolCalls.length} tool calls`);
       for (const toolCall of toolCalls) {
         try {
-          const toolResponse = (await callToolWithTimeout(
-            client,
-            toolCall.function.name,
-            toolCall.function.arguments
-          )) as ToolResponse;
-
-          console.log("Tool response received:", toolResponse);
-
-          const formattedResponse = formatToolResponse(
-            toolResponse?.content ?? []
-          );
-
-          workerMessages.push({
-            role: "tool",
-            name: toolCall.function.name,
-            content: formattedResponse,
-            tool_call_id: String(Math.random()),
-          });
+          await handleToolCall(toolCall, workerMessages, client);
         } catch (error) {
           console.error("Tool execution error:", error);
           throw error;

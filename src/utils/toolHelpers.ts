@@ -122,10 +122,7 @@ export async function handleToolCall(
           type: "function",
           function: {
             name: toolName,
-            arguments:
-              typeof toolArgs === "object"
-                ? JSON.stringify(toolArgs)
-                : toolArgs,
+            arguments: toolArgs,
           },
         },
       ],

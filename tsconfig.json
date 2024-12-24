@@ -10,7 +10,11 @@
     "outDir": "dist",
     "allowJs": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "baseUrl": "./",
+    "paths": {
+      "*": ["src/*"]
+    }
   },
   "include": ["*.ts", "src/**/*.ts"],
   "exclude": ["node_modules"]
