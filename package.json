@@ -13,9 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@langchain/ollama": "^0.1.4",
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@modelcontextprotocol/server-filesystem": "^0.6.2",
     "ollama": "^0.5.11"
   },
   "devDependencies": {

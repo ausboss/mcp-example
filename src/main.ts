@@ -1,77 +1,61 @@
-// main.ts
+import * as readline from "node:readline/promises";
 
-import {
-  convertToOpenaiTools,
-  fetchTools,
-  formatToolResponse,
-} from "./utils/toolHelpers.js";
+import { convertToOpenaiTools, fetchTools } from "./utils/toolHelpers";
+import { stdin as input, stdout as output } from "node:process";
 
-import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { callToolWithTimeout } from "./utils/toolUtils.js";
-import { createMcpClient } from "./utils/mcpClient.js";
+import { OllamaAgent } from "./utils/ollamaAgent";
+import { createMcpClient } from "./utils/mcpClient";
+import { ollamaConfig } from "./config/index";
 
-async function demonstrateMcpFunctionality() {
-  let client: Client | undefined;
-  let transport: StdioClientTransport | undefined;
+async function runInteractiveOllama(model: string) {
+  let client;
+  let transport;
 
   try {
-    console.log("\n🚀 Creating MCP client...");
-    const mcpResult = await createMcpClient("./mcp-config.json", "filesystem");
+    const mcpResult = await createMcpClient("filesystem");
     client = mcpResult.client;
     transport = mcpResult.transport;
 
-    // Fetch and display tools as OpenAI format
-    console.log("\n📚 Fetching MCP tools...");
     const mcpTools = await fetchTools(client);
+
     if (!mcpTools) {
       console.log("❌ No tools fetched from MCP.");
       return;
     }
-    const openaiTools = convertToOpenaiTools(mcpTools);
-    console.log("\nTools in OpenAI format:");
-    console.log(JSON.stringify(openaiTools, null, 2));
 
-    // List allowed directories
-    console.log("\n📂 Listing allowed directories...");
-    const allowedDirsResponse = (await callToolWithTimeout(
+    const ollamaTools = convertToOpenaiTools(mcpTools);
+    const agent = await new OllamaAgent(
+      model,
       client,
-      "list_allowed_directories",
-      {}
-    )) as CallToolResult;
-    console.log(
-      "Allowed directories:",
-      formatToolResponse(allowedDirsResponse.content)
-    );
+      ollamaTools
+    ).initialize();
 
-    // List contents of test-files directory
-    console.log("\n📂 Listing contents of test-files directory...");
-    const dirContents = (await callToolWithTimeout(client, "list_directory", {
-      path: "test-files",
-    })) as CallToolResult;
-    console.log("Directory contents:", formatToolResponse(dirContents.content));
+    const rl = readline.createInterface({ input, output });
 
-    // Read test.txt file
-    console.log("\n📄 Reading test.txt...");
-    const fileContent = (await callToolWithTimeout(client, "read_file", {
-      path: "test-files/test.txt",
-    })) as CallToolResult;
-    console.log("File content:", formatToolResponse(fileContent.content));
-  } catch (error: unknown) {
-    console.error(
-      "\n❌ An error occurred:",
-      error instanceof Error ? error.message : String(error)
-    );
+    console.log(`\n🚀 Chatting with Ollama model: ${model}`); // More natural wording
+    console.log("Type 'exit' to quit.\n");
+
+    while (true) {
+      const userInput = await rl.question("You: ");
+
+      if (userInput.toLowerCase() === "exit") {
+        console.log("Goodbye!");
+        break;
+      }
+      const result = await agent.executeTask(userInput);
+      console.log(`Assistant: ${result}`); // Just print the result
+    }
+
+    rl.close();
+  } catch (error) {
+    console.error("\n❌ An error occurred:", error);
   } finally {
-    // Clean up
     if (client) await client.close();
     if (transport) await transport.close();
     process.exit(0);
   }
 }
 
-// Run the demonstration
-demonstrateMcpFunctionality().catch((error) =>
-  console.error("Fatal error:", error)
-);
+const model = ollamaConfig.model;
+
+runInteractiveOllama(model).catch(console.error);

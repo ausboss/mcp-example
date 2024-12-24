@@ -1,6 +1,4 @@
 // ollamaHelpers.ts
 
-export { OllamaManager, processOllamaToolCalls } from "./ollamaManager.js";
-export { handleWorkerResponse } from "./workerHandler.js";
-export { getManagerResponse } from "./managerHandler.js";
-export type { ManagerResponse, ModelResponse } from "./types/ollamaTypes.js";
+export { OllamaAgent, runOllamaAgent } from "./ollamaAgent.js";
+export { handleToolCall } from "./toolHelpers.js"; // Make sure this is exported if needed elsewhere

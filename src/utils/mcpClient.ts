@@ -3,11 +3,11 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { getDefaultEnvironment } from "./environment.js";
-import { getServerConfig } from "../server/serverPath.js";
+import { getMcpServerConfig } from "../config/index.js";
 import { resolveCommand } from "./commandResolver.js";
 
-export async function createMcpClient(configPath: string, serverName: string) {
-  const config = await getServerConfig(configPath, serverName);
+export async function createMcpClient(serverName: string) {
+  const config = getMcpServerConfig(serverName);
 
   // Resolve the command to ensure it exists and is executable
   const resolvedCommand = await resolveCommand(config.command);

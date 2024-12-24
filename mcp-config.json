@@ -4,5 +4,9 @@
       "command": "npx",
       "args": ["@modelcontextprotocol/server-filesystem", "./"]
     }
+  },
+  "ollama": {
+    "host": "http://localhost:11434",
+    "model": "qwen2.5:latest"
   }
 }

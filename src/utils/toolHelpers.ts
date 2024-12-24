@@ -110,7 +110,7 @@ export async function handleToolCall(
     const formattedResponse = formatToolResponse(
       (toolResponse as any)?.content || []
     );
-    logging.debug(`Tool '${toolName}' Response: ${formattedResponse}`);
+    // logging.debug(`Tool '${toolName}' Response: ${formattedResponse}`);
 
     // Update conversation history with tool call
     conversationHistory.push({
@@ -165,7 +165,7 @@ export function formatToolResponse(responseContent: any): string {
  * @param client - The MCP client
  */
 export async function fetchTools(client: Client): Promise<any[] | null> {
-  logging.debug("Fetching tools for chat mode...");
+  // logging.debug("Fetching tools for chat mode...");
 
   // request tool list from the MCP server
   const toolsResponse = await client.request(

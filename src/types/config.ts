@@ -5,6 +5,12 @@ export interface ServerConfig {
   env?: Record<string, string>;
 }
 
+export interface OllamaConfig {
+  host: string;
+  model: string;
+}
+
 export interface Config {
   mcpServers: Record<string, ServerConfig>;
+  ollama: OllamaConfig;
 }
