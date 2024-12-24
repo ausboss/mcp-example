@@ -112,11 +112,10 @@ You: yes
 Attempt 1/5
 Tool 'read_file' with args: {"path":"c:\\users\\austi\\desktop\\mcp-example\\test-files\\test.txt"}
 Assistant: The content of `test.txt` is as follows:
-```
+
 
 poopoo peepepe
 
-```
 
 Would you like to perform any further operations with this file?
 You: no
