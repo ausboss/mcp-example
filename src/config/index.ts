@@ -1,9 +1,8 @@
 // src/config/index.ts
 
 import * as fs from "fs";
-import * as path from "path";
 
-import { Config, ServerConfig } from "../types/config";
+import { Config } from "../types/config"; // Import the main Config type
 
 // Load config once at startup
 const configPath = "./mcp-config.json";
@@ -20,11 +19,4 @@ try {
 
 // Export the full config and specific sections
 export const getConfig = () => config;
-export const getMcpServerConfig = (serverName: string): ServerConfig => {
-  const serverConfig = config.mcpServers[serverName];
-  if (!serverConfig) {
-    throw new Error(`Server '${serverName}' not found in config`);
-  }
-  return serverConfig;
-};
 export const ollamaConfig = config.ollama;

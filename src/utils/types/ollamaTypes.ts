@@ -10,9 +10,10 @@ export interface ModelResponse {
   content: string;
   tool_calls?: Array<{
     id: string;
+    type: "function";
     function: {
       name: string;
-      arguments: any;
+      arguments: Record<string, any>; // Changed 'any' to Record<string, any> for better type safety
     };
   }>;
 }

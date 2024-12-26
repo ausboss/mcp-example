@@ -52,7 +52,7 @@ export async function handleToolCall(
   toolCall: any,
   conversationHistory: ConversationMessage[],
   client: Client
-): Promise<void> {
+): Promise<string> {
   let toolCallId: string | null = null;
   let toolName = "unknown_tool";
   let rawArguments: any = {};
@@ -81,13 +81,13 @@ export async function handleToolCall(
         conversationHistory[conversationHistory.length - 1]?.content;
       if (!lastMessage) {
         logging.debug("No last message to parse tool call from.");
-        return;
+        return ""; // Return empty string if no last message
       }
 
       const parsedTool = parseToolResponse(lastMessage);
       if (!parsedTool) {
         logging.debug("Unable to parse tool call from message.");
-        return;
+        return ""; // Return empty string if tool call parsing fails
       }
 
       toolCallId = parsedTool.id;
@@ -96,14 +96,20 @@ export async function handleToolCall(
     }
 
     // Ensure arguments are parsed
-    let toolArgs: any;
+    let toolArgs: any = rawArguments;
     if (typeof rawArguments === "string") {
-      toolArgs = JSON.parse(rawArguments);
-    } else {
-      toolArgs = rawArguments;
+      try {
+        toolArgs = JSON.parse(rawArguments);
+      } catch (error: any) {
+        logging.debug(
+          `Error parsing arguments string: ${error.message}`,
+          rawArguments
+        );
+        throw error; // Re-throw to be caught in demo.ts
+      }
     }
 
-    // Call the tool
+    // Call the tool using the provided client
     const toolResponse = await callToolWithTimeout(client, toolName, toolArgs);
 
     // Format the tool response
@@ -128,13 +134,7 @@ export async function handleToolCall(
       ],
     });
 
-    // Add tool response to conversation history
-    conversationHistory.push({
-      role: "tool",
-      name: toolName,
-      content: formattedResponse,
-      tool_call_id: toolCallId || undefined,
-    });
+    return formattedResponse; // Return the formatted response
   } catch (error: any) {
     if (error.name === "SyntaxError") {
       logging.debug(
@@ -143,6 +143,7 @@ export async function handleToolCall(
     } else {
       logging.debug(`Error handling tool call '${toolName}': ${error.message}`);
     }
+    throw error; // Re-throw the error so demo.ts can catch it
   }
 }
 
@@ -188,9 +189,8 @@ export async function fetchTools(client: Client): Promise<any[] | null> {
 
 /**
  * Convert tools into OpenAI-compatible function definitions.
- * Similar to `convert_to_openai_tools` in Python.
  */
-export function convertToOpenaiTools(tools: any[]): any[] {
+export function convertToOpenaiTools(tools: any[], serverName: string): any[] {
   return tools.map((tool) => ({
     type: "function",
     function: {
@@ -198,5 +198,6 @@ export function convertToOpenaiTools(tools: any[]): any[] {
       description: tool.description || "",
       parameters: tool.inputSchema || {},
     },
+    mcp_server: serverName, // Add the server name
   }));
 }
