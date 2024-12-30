@@ -1,6 +1,6 @@
 // utils/toolHelpers.ts
 
-import * as logging from "console"; // You can use a real logging library if you prefer
+import * as logging from "console";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -20,7 +20,6 @@ interface ConversationMessage {
   tool_call_id?: string;
 }
 
-// Similar to `parse_tool_response` in Python
 export function parseToolResponse(response: string): ParsedToolCall | null {
   const functionRegex = /<function=(\w+)>([\s\S]*?)<\/function>/;
   const match = response.match(functionRegex);
@@ -41,31 +40,21 @@ export function parseToolResponse(response: string): ParsedToolCall | null {
   return null;
 }
 
-/**
- * Handle a single tool call for different formats.
- * @param toolCall - The tool call object. It may have a `function` attribute or
- *                   be a parsed object with `function`.
- * @param conversationHistory - An array of conversation messages.
- * @param client - The MCP client for calling tools.
- */
 export async function handleToolCall(
   toolCall: any,
-  conversationHistory: ConversationMessage[],
-  client: Client
+  client: Client // Remove conversationHistory here
 ): Promise<string> {
   let toolCallId: string | null = null;
   let toolName = "unknown_tool";
   let rawArguments: any = {};
 
   try {
-    // Check if tool_call is object-style call (like OpenAI/Ollama) or needs parsing
     if (
       (typeof toolCall === "object" &&
         toolCall !== null &&
         "function" in toolCall) ||
       (toolCall?.function?.name && toolCall?.function?.arguments)
     ) {
-      // For object-style calls
       if (toolCall.id && toolCall.function?.name) {
         toolCallId = toolCall.id;
         toolName = toolCall.function.name;
@@ -76,26 +65,15 @@ export async function handleToolCall(
         rawArguments = toolCall["function"]["arguments"];
       }
     } else {
-      // Parse from the last message (e.g., Llama format)
-      const lastMessage =
-        conversationHistory[conversationHistory.length - 1]?.content;
-      if (!lastMessage) {
-        logging.debug("No last message to parse tool call from.");
-        return ""; // Return empty string if no last message
-      }
-
-      const parsedTool = parseToolResponse(lastMessage);
-      if (!parsedTool) {
-        logging.debug("Unable to parse tool call from message.");
-        return ""; // Return empty string if tool call parsing fails
-      }
-
-      toolCallId = parsedTool.id;
-      toolName = parsedTool.function;
-      rawArguments = parsedTool.arguments;
+      // This part might still be needed if the tool call info comes from the last message
+      // Consider if this parsing logic should be moved to the OllamaAgent as well
+      // for better consistency.
+      console.warn(
+        "Parsing tool call from conversation history is deprecated here. Ensure toolCall object is passed correctly."
+      );
+      return ""; // Or throw an error to indicate incorrect usage
     }
 
-    // Ensure arguments are parsed
     let toolArgs: any = rawArguments;
     if (typeof rawArguments === "string") {
       try {
@@ -105,36 +83,19 @@ export async function handleToolCall(
           `Error parsing arguments string: ${error.message}`,
           rawArguments
         );
-        throw error; // Re-throw to be caught in demo.ts
+        throw error;
       }
     }
 
-    // Call the tool using the provided client
     const toolResponse = await callToolWithTimeout(client, toolName, toolArgs);
-
-    // Format the tool response
     const formattedResponse = formatToolResponse(
       (toolResponse as any)?.content || []
     );
-    // logging.debug(`Tool '${toolName}' Response: ${formattedResponse}`);
 
-    // Update conversation history with tool call
-    conversationHistory.push({
-      role: "assistant",
-      content: null,
-      tool_calls: [
-        {
-          id: toolCallId,
-          type: "function",
-          function: {
-            name: toolName,
-            arguments: toolArgs,
-          },
-        },
-      ],
-    });
+    // Remove the message push from here
+    // The OllamaAgent.executeTask will handle adding the "tool" message
 
-    return formattedResponse; // Return the formatted response
+    return formattedResponse;
   } catch (error: any) {
     if (error.name === "SyntaxError") {
       logging.debug(
@@ -143,14 +104,10 @@ export async function handleToolCall(
     } else {
       logging.debug(`Error handling tool call '${toolName}': ${error.message}`);
     }
-    throw error; // Re-throw the error so demo.ts can catch it
+    throw error;
   }
 }
 
-/**
- * Format the response content from a tool.
- * Similar to `format_tool_response` in Python.
- */
 export function formatToolResponse(responseContent: any): string {
   if (Array.isArray(responseContent)) {
     return responseContent
@@ -161,43 +118,47 @@ export function formatToolResponse(responseContent: any): string {
   return String(responseContent);
 }
 
-/**
- * Fetch tools from the server. Similar to `fetch_tools` in Python.
- * @param client - The MCP client
- */
 export async function fetchTools(client: Client): Promise<any[] | null> {
-  // logging.debug("Fetching tools for chat mode...");
+  try {
+    const toolsResponse = await client.request(
+      { method: "tools/list", params: {} },
+      ListToolsResultSchema
+    );
+    const tools = toolsResponse?.tools || [];
 
-  // request tool list from the MCP server
-  const toolsResponse = await client.request(
-    { method: "tools/list", params: {} },
-    ListToolsResultSchema
-  );
-  const tools = toolsResponse?.tools || [];
+    if (
+      !Array.isArray(tools) ||
+      !tools.every((tool) => typeof tool === "object")
+    ) {
+      logging.debug("Invalid tools format received.");
+      return null;
+    }
 
-  // check if tools are valid
-  if (
-    !Array.isArray(tools) ||
-    !tools.every((tool) => typeof tool === "object")
-  ) {
-    logging.debug("Invalid tools format received.");
+    return tools;
+  } catch (error) {
+    console.error("Error fetching tools:", error);
     return null;
   }
-
-  return tools;
 }
 
-/**
- * Convert tools into OpenAI-compatible function definitions.
- */
-export function convertToOpenaiTools(tools: any[], serverName: string): any[] {
-  return tools.map((tool) => ({
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description || "",
-      parameters: tool.inputSchema || {},
-    },
-    mcp_server: serverName, // Add the server name
-  }));
+export function convertToOpenaiTools(tools: any[]): any[] {
+  return tools
+    .map((tool) => {
+      // Ensure tool has required properties
+      if (!tool.name) {
+        console.warn("Tool missing name:", tool);
+        return null;
+      }
+
+      return {
+        name: tool.name,
+        description: tool.description || "",
+        parameters: {
+          type: "object",
+          properties: tool.inputSchema?.properties || {},
+          required: tool.inputSchema?.required || [],
+        },
+      };
+    })
+    .filter(Boolean); // Remove any null entries
 }

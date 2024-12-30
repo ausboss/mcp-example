@@ -1,55 +1,94 @@
 // ollamaAgent.ts
 
-import { handleToolCall, parseToolResponse } from "./toolHelpers";
+import { convertToOpenaiTools, handleToolCall } from "./toolHelpers";
 
+import { CallToolResult } from "@modelcontextprotocol/sdk/types";
 import { Client } from "@modelcontextprotocol/sdk/client/index";
 import { ModelResponse } from "./types/ollamaTypes";
 import { Ollama } from "ollama";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
+import { callToolWithTimeout } from "./toolUtils";
 import { ollamaConfig } from "../config";
 
 const ollama = new Ollama({ host: ollamaConfig.host });
 
 export class OllamaAgent {
   private messages: any[] = [];
-  private clients: Map<
-    string,
-    { client: Client; transport: StdioClientTransport }
-  >;
+  private toolMap: Map<string, Client>;
   private model: string;
   private tools: any[];
   private maxIterations: number;
 
   constructor(
     model: string,
-    clients: Map<string, { client: Client; transport: StdioClientTransport }>,
+    toolMap: Map<string, Client>,
     tools: any[],
     maxIterations: number = 5
   ) {
     this.model = model;
-    this.clients = clients;
+    this.toolMap = toolMap;
     this.tools = tools;
     this.maxIterations = maxIterations;
 
     this.messages = [
       {
         role: "system",
-        content: `You are an assistant that has access to various tools and can utilize them to accomplish tasks.
-
-        Guidelines:
-        - Use provided tools to gather necessary information or perform actions.
-        - Pay close attention to the results of tool calls. The output from tools will be in messages with the role "tool".
-        - If you need to interact with a file system, you can use tools to list directories and read/write files.
-        - Carefully review the output of tools to understand the results and use that information to continue the conversation or complete the task.
-        `,
+        content: `sYou are a helpful assistant.`,
       },
     ];
   }
 
   async initialize() {
+    console.log("messages: ", this.messages);
+
+    if (this.tools.length === 0) {
+      console.warn("No tools available to the agent");
+    }
     return this;
   }
 
+  private async callAnyTool(
+    toolName: string,
+    args: any
+  ): Promise<string | undefined> {
+    const clientForTool = this.toolMap.get(toolName);
+    if (!clientForTool) {
+      console.warn(`⚠️ Tool '${toolName}' not found among available tools.`);
+
+      // Immediately push an assistant message to the conversation:
+      this.messages.push({
+        role: "assistant",
+        content: `I don't have a tool called '${toolName}'. Let's continue without it.`,
+      });
+
+      // Return a short response so the agent doesn't keep iterating:
+      return "No tool found. Continuing conversation.";
+    }
+
+    console.log(`\n🛠️ Calling tool '${toolName}'...`);
+
+    try {
+      const parsedArgs = typeof args === "string" ? JSON.parse(args) : args;
+      const finalArgs =
+        typeof parsedArgs === "object" && parsedArgs !== null ? parsedArgs : {};
+
+      // Call handleToolCall with the correct arguments
+      const toolResult = await handleToolCall(
+        {
+          id: `call_${toolName}_${Date.now()}`,
+          function: {
+            name: toolName,
+            arguments: finalArgs,
+          },
+        },
+        clientForTool
+      );
+
+      return toolResult;
+    } catch (error) {
+      console.error(`❌ Error calling tool '${toolName}':`, error);
+      return undefined;
+    }
+  }
   async executeTask(prompt: string): Promise<string> {
     this.messages.push({ role: "user", content: prompt });
 
@@ -60,46 +99,44 @@ export class OllamaAgent {
         const response: any = await ollama.chat({
           model: this.model,
           messages: this.messages,
-          tools: this.tools,
+          tools: convertToOpenaiTools(this.tools),
           stream: false,
           options: {
-            temperature: 0.7,
-            num_predict: 1000,
+            temperature: 0.3,
           },
         });
 
-        this.messages.push(response.message);
-
-        const toolCalls = (response.message as ModelResponse).tool_calls || [];
-
-        if (toolCalls.length > 0) {
+        if (response.message.tool_calls) {
+          const toolCalls =
+            (response.message as ModelResponse).tool_calls || [];
           console.log(`Attempt ${iterationCount + 1}/${this.maxIterations}`);
           for (const toolCall of toolCalls) {
             const toolName = toolCall.function.name;
-            const args = toolCall.function.arguments; // Keep arguments as an object for handleToolCall
+            const args = toolCall.function.arguments;
             console.log(
               `Tool '${toolName}' with args: ${JSON.stringify(args)}`
             );
             try {
-              const clientToUse = this.findClientForTool(toolName);
-              if (clientToUse) {
-                const toolResult = await handleToolCall(
-                  toolCall,
-                  this.messages,
-                  clientToUse
+              const clientForTool = this.toolMap.get(toolName);
+              if (!clientForTool) {
+                console.warn(
+                  `⚠️ Tool '${toolName}' not found among available tools.`
                 );
+                continue;
+              }
+              // Call handleToolCall with correct arguments
+              const toolResult = await handleToolCall(toolCall, clientForTool);
+              if (toolResult) {
                 console.log(`Tool '${toolName}' result: ${toolResult}`);
                 this.messages.push({
                   role: "tool",
                   name: toolName,
                   content: toolResult,
-                  tool_call_id: toolCall.id,
                 });
               } else {
-                console.error(`No client found for tool: ${toolName}`);
                 this.messages.push({
                   role: "assistant",
-                  content: `Error: No MCP server available for tool '${toolName}'.`,
+                  content: `I don't have a tool called '${toolName}'. Let's continue.`,
                 });
               }
             } catch (error) {
@@ -111,6 +148,7 @@ export class OllamaAgent {
             }
           }
           iterationCount++;
+          console.log("messages: ", this.messages);
         } else {
           return response.message.content;
         }
@@ -125,47 +163,14 @@ export class OllamaAgent {
 
     return `Reached maximum attempts (${this.maxIterations})`;
   }
-  // Helper function to find the first client that has a tool with the given name
-  private findClientForTool(toolName: string): Client | undefined {
-    // First validate the tool exists in our tools array
-    const tool = this.tools.find((t) => {
-      // Handle both function.name and direct name properties
-      const name = t.function?.name || t.name;
-      return name === toolName;
-    });
-
-    if (!tool) {
-      console.log(`❌ Tool '${toolName}' not found in available tools.`);
-      return undefined;
-    }
-
-    // Get the server name from the tool definition
-    const serverName = tool.mcp_server || tool.server;
-    if (!serverName) {
-      console.log(`❌ No server specified for tool '${toolName}'.`);
-      return undefined;
-    }
-
-    // Get the client for this server
-    const clientData = this.clients.get(serverName);
-    if (!clientData) {
-      console.log(`❌ No client found for server '${serverName}'.`);
-      return undefined;
-    }
-
-    console.log(
-      `✅ Found client for tool '${toolName}' on server: ${serverName}`
-    );
-    return clientData.client;
-  }
 }
 
 export async function runOllamaAgent(
   model: string,
   initialPrompt: string,
   ollamaTools: any[],
-  clients: Map<string, { client: Client; transport: StdioClientTransport }> // Expect the Map
+  toolMap: Map<string, Client>
 ): Promise<string> {
-  const agent = new OllamaAgent(model, clients, ollamaTools); // Pass the Map
+  const agent = await new OllamaAgent(model, toolMap, ollamaTools).initialize();
   return await agent.executeTask(initialPrompt);
 }

@@ -7,12 +7,28 @@ export async function callToolWithTimeout(
   args: any,
   timeoutMs = 30000
 ): Promise<unknown> {
+  // Parse arguments if they're a string
+  let parsedArgs = args;
+  if (typeof args === 'string') {
+    try {
+      parsedArgs = JSON.parse(args);
+    } catch (e) {
+      // If parsing fails, wrap the string in an object
+      parsedArgs = { value: args };
+    }
+  }
+
+  // Ensure args is an object
+  if (typeof parsedArgs !== 'object' || parsedArgs === null) {
+    parsedArgs = {};
+  }
+
   const toolCallPromise = client.request(
     {
       method: "tools/call",
       params: {
         name,
-        arguments: args,
+        arguments: parsedArgs,
       },
     },
     CallToolResultSchema

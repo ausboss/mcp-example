@@ -20,20 +20,33 @@ async function runInteractiveOllama(model: string) {
     // Create all MCP clients
     clients = await createMcpClients();
 
-    // Collect all tools from all servers
-    let allTools = [];
+    // Collect all tools from all servers and create a tool map
+    const toolMap: Map<string, Client> = new Map();
+    const allTools: any[] = [];
+
     if (clients) {
       for (const [serverName, { client }] of clients) {
         console.log(`\n📚 Fetching MCP tools for ${serverName}...`);
         const mcpTools = await fetchTools(client);
 
-        if (!mcpTools) {
-          console.log(`❌ No tools fetched from MCP server ${serverName}.`);
-          continue;
-        }
+        if (mcpTools && mcpTools.length > 0) {
+          const ollamaTools = convertToOpenaiTools(mcpTools);
 
-        const ollamaTools = convertToOpenaiTools(mcpTools);
-        allTools.push(...ollamaTools);
+          // Log the converted tools for debugging
+          console.log(
+            `Tools from ${serverName}:`,
+            ollamaTools.map((t) => t.name)
+          );
+
+          ollamaTools.forEach((tool) => {
+            if (tool && tool.name) {
+              allTools.push(tool);
+              toolMap.set(tool.name, client);
+            }
+          });
+        } else {
+          console.log(`❌ No tools fetched from MCP server ${serverName}.`);
+        }
       }
     }
 
@@ -42,14 +55,19 @@ async function runInteractiveOllama(model: string) {
       return;
     }
 
-    // Create a single agent with all tools and the map of clients
-    const agent = await new OllamaAgent(
-      model,
-      clients || new Map(), // Pass the map of clients
-      allTools
-    ).initialize();
+    // Log the final tool configuration
+    // console.log("\n🔧 Available tools:");
+    // allTools.forEach((tool) => {
+    //   console.log(
+    //     `- ${tool.name}: ${tool.description}` +
+    //       (tool.arguments ? ` (${Object.keys(tool.arguments).join(", ")})` : "")
+    //   );
+    // });
 
-    // Create a single readline interface
+    // Create agent with validated tools
+    const agent = await new OllamaAgent(model, toolMap, allTools).initialize();
+
+    // Create readline interface
     const rl = readline.createInterface({ input, output });
 
     console.log(`\n🚀 Chatting with Ollama model: ${model}`);

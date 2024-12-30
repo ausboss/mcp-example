@@ -108,7 +108,7 @@ async function demonstrateMcpFunctionality() {
     // Visit a webpage and get the content
     console.log("\n🌐 Visiting example.com and getting content...");
     const webpageContent = await callAnyTool("visit_page", {
-      url: "https://boards.4chan.org/g/thread/103651498",
+      url: "https://ollama.com/blog/tool-support",
       takeScreenshot: false,
     });
     if (webpageContent) {

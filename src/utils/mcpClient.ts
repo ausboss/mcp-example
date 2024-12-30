@@ -33,7 +33,7 @@ export async function createMcpClients() {
     });
 
     const client = new Client(
-      { name: `example-client-${serverName}`, version: "1.0.0" },
+      { name: `ollama-client-${serverName}`, version: "1.0.0" },
       {
         capabilities: {
           tools: { call: true, list: true },
