@@ -10,6 +10,20 @@ interface McpClientEntry {
   transport: any; // Type could be made more specific based on transport type
 }
 
+interface ToolParameterInfo {
+  type: string;
+  description?: string;
+}
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    properties: Record<string, ToolParameterInfo>;
+    required: string[];
+  };
+}
+
 export class ToolManager {
   private toolMap: Map<string, Client> = new Map();
   private clients: Map<string, McpClientEntry> = new Map();
@@ -61,6 +75,76 @@ export class ToolManager {
       console.error(`Error calling tool '${toolName}':`, error);
       return undefined;
     }
+  }
+
+  // Get parameter info for a specific tool
+  getToolParameterInfo(toolName: string): ToolDefinition | undefined {
+    return this.tools.find((t) => t.name === toolName);
+  }
+
+  // Suggest parameter mapping for provided arguments
+  suggestParameterMapping(
+    toolName: string,
+    providedArgs: Record<string, unknown>
+  ): Record<string, string> {
+    const tool = this.getToolParameterInfo(toolName);
+    if (!tool) return {};
+
+    const mapping: Record<string, string> = {};
+    const expectedParams = Object.keys(tool.parameters.properties);
+
+    // Common variations for path parameter
+    const pathVariations = [
+      "path",
+      "file_path",
+      "filepath",
+      "directory_path",
+      "dirpath",
+    ];
+
+    for (const providedParam of Object.keys(providedArgs)) {
+      if (expectedParams.includes(providedParam)) {
+        continue; // Parameter is already correct
+      }
+
+      // Check if this is a path parameter variation
+      if (
+        pathVariations.includes(providedParam) &&
+        expectedParams.includes("path")
+      ) {
+        mapping[providedParam] = "path";
+        continue;
+      }
+
+      // Find most similar parameter name
+      const mostSimilar = this.findMostSimilarParameter(
+        providedParam,
+        expectedParams
+      );
+      if (mostSimilar) {
+        mapping[providedParam] = mostSimilar;
+      }
+    }
+
+    return mapping;
+  }
+
+  private findMostSimilarParameter(
+    provided: string,
+    expected: string[]
+  ): string | null {
+    // Simple string similarity check
+    const normalized = provided.toLowerCase().replace(/[_-]/g, "");
+    for (const param of expected) {
+      const normalizedExpected = param.toLowerCase().replace(/[_-]/g, "");
+      if (
+        normalizedExpected.includes(normalized) ||
+        normalized.includes(normalizedExpected)
+      ) {
+        return param;
+      }
+    }
+    return null;
   }
 
   async cleanup() {
