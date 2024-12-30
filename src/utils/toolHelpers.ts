@@ -20,26 +20,6 @@ interface ConversationMessage {
   tool_call_id?: string;
 }
 
-export function parseToolResponse(response: string): ParsedToolCall | null {
-  const functionRegex = /<function=(\w+)>([\s\S]*?)<\/function>/;
-  const match = response.match(functionRegex);
-
-  if (match) {
-    const [, functionName, argsString] = match;
-    try {
-      const args = JSON.parse(argsString);
-      return {
-        id: `call_${functionName}`,
-        function: functionName,
-        arguments: args,
-      };
-    } catch (error: any) {
-      logging.debug(`Error parsing function arguments: ${error.message}`);
-    }
-  }
-  return null;
-}
-
 export async function handleToolCall(
   toolCall: any,
   client: Client // Remove conversationHistory here
