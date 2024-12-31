@@ -2,8 +2,7 @@ import { ChatManager } from "./lib/ChatManager";
 import { ollamaConfig } from "./config";
 
 async function main() {
-  const { model, host } = ollamaConfig;
-  const chatManager = new ChatManager(host, model);
+  const chatManager = new ChatManager(ollamaConfig);
 
   try {
     await chatManager.initialize();

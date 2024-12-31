@@ -4,20 +4,62 @@ import { OllamaMessage } from "../utils/types/ollamaTypes";
 import { ToolManager } from "./ToolManager";
 import { formatToolResponse } from "../utils/toolFormatters";
 
+interface ErrorWithCause extends Error {
+  cause?: {
+    code?: string;
+  };
+}
+
 export class ChatManager {
   private ollama: Ollama;
   private messages: OllamaMessage[] = [];
   private toolManager: ToolManager;
   private chatInterface: ChatInterface;
+  private model: string;
 
-  constructor(host: string, private model: string) {
-    this.ollama = new Ollama({ host });
+  constructor(ollamaConfig: { host?: string; model?: string } = {}) {
+    this.ollama = new Ollama(ollamaConfig);
+    this.model = ollamaConfig.model || "qwen2.5:latest"; // Default fallback if not provided
     this.toolManager = new ToolManager();
     this.chatInterface = new ChatInterface();
+
+    this.messages = [
+      {
+        role: "system",
+        content:
+          "You are a helpful AI assistant. Please provide clear, accurate, and relevant responses to user queries. If you need to use tools to help answer a question, explain what you're doing.",
+      },
+    ];
   }
 
   async initialize() {
     await this.toolManager.initialize();
+    // Test Ollama connection
+    try {
+      await this.testOllamaConnection();
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to connect to Ollama. Is Ollama running? Error: ${errorMsg}`
+      );
+    }
+  }
+
+  private async testOllamaConnection() {
+    try {
+      // Try a simple chat call to test connection
+      await this.ollama.chat({
+        model: this.model,
+        messages: [{ role: "user", content: "test" }],
+        tools: [],
+      });
+    } catch (error) {
+      const err = error as ErrorWithCause;
+      if (err.cause?.code === "ECONNREFUSED") {
+        throw new Error("Could not connect to Ollama server");
+      }
+      throw error;
+    }
   }
 
   async start() {
@@ -28,10 +70,30 @@ export class ChatManager {
         const userInput = await this.chatInterface.getUserInput();
         if (userInput.toLowerCase() === "exit") break;
 
-        await this.processUserInput(userInput);
+        try {
+          await this.processUserInput(userInput);
+        } catch (error) {
+          const err = error as ErrorWithCause;
+          if (err.cause?.code === "ECONNREFUSED") {
+            console.error(
+              "\nError: Lost connection to Ollama server. Please ensure Ollama is running."
+            );
+            console.log("You can:");
+            console.log("1. Start Ollama and type your message again");
+            console.log('2. Type "exit" to quit\n');
+          } else {
+            console.error(
+              "Error processing input:",
+              err instanceof Error ? err.message : String(err)
+            );
+          }
+        }
       }
     } catch (error) {
-      console.error("Error:", error);
+      console.error(
+        "Error:",
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       this.cleanup();
     }
@@ -40,24 +102,30 @@ export class ChatManager {
   private async processUserInput(userInput: string) {
     this.messages.push({ role: "user", content: userInput });
 
-    // Get initial response
-    const response = await this.ollama.chat({
-      model: this.model,
-      messages: this.messages as any[],
-      tools: this.toolManager.tools,
-    });
+    try {
+      // Get initial response
+      const response = await this.ollama.chat({
+        model: this.model,
+        messages: this.messages as any[],
+        tools: this.toolManager.tools,
+      });
 
-    this.messages.push(response.message as OllamaMessage);
+      this.messages.push(response.message as OllamaMessage);
 
-    // If no tool calls, just show the response and we're done
-    const toolCalls = response.message.tool_calls ?? [];
-    if (toolCalls.length === 0) {
-      console.log("Assistant:", response.message.content);
-      return;
+      // If no tool calls, just show the response and we're done
+      const toolCalls = response.message.tool_calls ?? [];
+      if (toolCalls.length === 0) {
+        console.log("Assistant:", response.message.content);
+        return;
+      }
+
+      // Handle tool calls and potential follow-ups
+      await this.handleToolCalls(toolCalls);
+    } catch (error) {
+      // Remove the failed message from history
+      this.messages.pop();
+      throw error; // Propagate the error to be handled by start()
     }
-
-    // Handle tool calls and potential follow-ups
-    await this.handleToolCalls(toolCalls);
   }
 
   private async handleToolCalls(toolCalls: any[]) {
@@ -116,34 +184,45 @@ export class ChatManager {
             tool_call_id: toolCall.function.name,
           });
 
-          // Let the model know about the error and try again
-          const errorResponse = await this.ollama.chat({
-            model: this.model,
-            messages: this.messages as any[],
-            tools: this.toolManager.tools,
-          });
+          try {
+            // Let the model know about the error and try again
+            const errorResponse = await this.ollama.chat({
+              model: this.model,
+              messages: this.messages as any[],
+              tools: this.toolManager.tools,
+            });
 
-          this.messages.push(errorResponse.message as OllamaMessage);
+            this.messages.push(errorResponse.message as OllamaMessage);
 
-          const newToolCalls = errorResponse.message.tool_calls ?? [];
-          if (newToolCalls.length > 0) {
-            // Don't recurse if we're retrying the same tool with the same args
-            const currentToolName = toolCall.function.name;
-            const hasNewToolCalls = newToolCalls.some(
-              (call) =>
-                call.function.name !== currentToolName ||
-                JSON.stringify(call.function.arguments) !==
-                  JSON.stringify(toolCall.function.arguments)
-            );
-
-            if (hasNewToolCalls) {
-              await this.handleToolCalls(newToolCalls);
-            } else {
-              console.log(
-                "Assistant: I apologize, but I'm having trouble with the correct parameter format. Let me try a different approach."
+            const newToolCalls = errorResponse.message.tool_calls ?? [];
+            if (newToolCalls.length > 0) {
+              // Don't recurse if we're retrying the same tool with the same args
+              const currentToolName = toolCall.function.name;
+              const hasNewToolCalls = newToolCalls.some(
+                (call) =>
+                  call.function.name !== currentToolName ||
+                  JSON.stringify(call.function.arguments) !==
+                    JSON.stringify(toolCall.function.arguments)
               );
-              return;
+
+              if (hasNewToolCalls) {
+                await this.handleToolCalls(newToolCalls);
+              } else {
+                console.log(
+                  "Assistant: I apologize, but I'm having trouble with the correct parameter format. Let me try a different approach."
+                );
+                return;
+              }
             }
+          } catch (error) {
+            const err = error as ErrorWithCause;
+            if (err.cause?.code === "ECONNREFUSED") {
+              throw error; // Propagate connection errors
+            }
+            console.error(
+              "Error handling tool response:",
+              err instanceof Error ? err.message : String(err)
+            );
           }
           return;
         }
@@ -157,31 +236,44 @@ export class ChatManager {
       }
     }
 
-    // Get final response after all tools in this batch are done
-    const finalResponse = await this.ollama.chat({
-      model: this.model,
-      messages: this.messages as any[],
-      tools: this.toolManager.tools,
-    });
+    try {
+      // Get final response after all tools in this batch are done
+      const finalResponse = await this.ollama.chat({
+        model: this.model,
+        messages: this.messages as any[],
+        tools: this.toolManager.tools,
+      });
 
-    // Add the model's response to messages
-    this.messages.push(finalResponse.message as OllamaMessage);
+      // Add the model's response to messages
+      this.messages.push(finalResponse.message as OllamaMessage);
 
-    // Print the response regardless of whether there are tool calls
-    console.log("Assistant:", finalResponse.message.content);
+      // Print the response regardless of whether there are tool calls
+      console.log("Assistant:", finalResponse.message.content);
 
-    // Check for new tool calls
-    const newToolCalls = finalResponse.message.tool_calls ?? [];
-    if (newToolCalls.length > 0) {
-      // Check if the new tool calls are different from the previous ones
-      const previousToolNames = new Set(toolCalls.map((t) => t.function.name));
-      const hasNewTools = newToolCalls.some(
-        (call) => !previousToolNames.has(call.function.name)
-      );
+      // Check for new tool calls
+      const newToolCalls = finalResponse.message.tool_calls ?? [];
+      if (newToolCalls.length > 0) {
+        // Check if the new tool calls are different from the previous ones
+        const previousToolNames = new Set(
+          toolCalls.map((t) => t.function.name)
+        );
+        const hasNewTools = newToolCalls.some(
+          (call) => !previousToolNames.has(call.function.name)
+        );
 
-      if (hasNewTools) {
-        await this.handleToolCalls(newToolCalls);
+        if (hasNewTools) {
+          await this.handleToolCalls(newToolCalls);
+        }
       }
+    } catch (error) {
+      const err = error as ErrorWithCause;
+      if (err.cause?.code === "ECONNREFUSED") {
+        throw error; // Propagate connection errors
+      }
+      console.error(
+        "Error getting final response:",
+        err instanceof Error ? err.message : String(err)
+      );
     }
   }
 
