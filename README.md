@@ -1,129 +1,106 @@
-# TypeScript MCP with Filesystem Server and Ollama Integration
+# TypeScript MCP Agent with Ollama Integration
 
-This project demonstrates how to interact with a [Model Context Protocol (MCP)](https://modelcontextprotocol.org/) server using TypeScript, specifically focusing on the [Filesystem MCP Server](https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem). This project leverages the official [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk) TypeScript SDK to facilitate communication with MCP servers. It also provides an example of integrating this setup with [Ollama](https://ollama.com/) to create an AI agent capable of interacting with your local file system.
+This project demonstrates integration between [Model Context Protocol (MCP)](https://modelcontextprotocol.org/) servers and [Ollama](https://ollama.com/), allowing AI models to interact with various tools through a unified interface.
 
 ## ✨ Features
 
-- **MCP Client Implementation:** Shows how to create and connect to an MCP server using TypeScript.
-- **Filesystem Interaction:** Provides an example of using the Filesystem MCP Server to perform operations like listing directories.
-- **Ollama Integration:** Demonstrates how to use Ollama as an AI agent to process prompts and utilize the filesystem tools exposed by the MCP server.
-- **Tool Calling:** Implements the concept of tool calling, allowing the AI agent to request and utilize functionalities provided by the MCP server.
-- **Interactive Chat Interface:** Offers a simple command-line interface to interact with the Ollama-powered agent.
-- **Configuration-Driven:** Uses a `mcp-config.json` file for easy configuration of MCP server details and Ollama settings.
+- Supports multiple MCP servers (both uvx and npx tested)
+- Built-in support for file system operations and web research
+- Easy configuration through `mcp-config.json`
+- Interactive chat interface with Ollama integration that should support any tools
+- Standalone demo mode for testing web and filesystem tools without an LLM
 
-## 🚀 Prerequisites
+## 🚀 Getting Started
 
-Before running this project, ensure you have the following installed:
+1. **Prerequisites:**
 
-- **Node.js:** (Version 18 or higher recommended)
-- **npm** or **yarn:** (Package managers for JavaScript)
-- **Ollama:** You need to have Ollama installed and running. You can find installation instructions on the [Ollama website](https://ollama.com/).
-- **Globally Installed Filesystem MCP Server:** Install the `@modelcontextprotocol/server-filesystem` package globally:
-  ```bash
-  npm install -g @modelcontextprotocol/server-filesystem
-  # or
-  yarn global add @modelcontextprotocol/server-filesystem
-  ```
-- **`node` or `npx` in your PATH:** The project relies on executing the Filesystem MCP Server. Ensure that either the `node` executable (if running the server directly) or `npx` (to execute the server package) is accessible in your system's PATH environment variable.
+   - Node.js (version 18 or higher)
+   - Ollama installed and running
+   - Install the MCP tools globally that you want to use:
 
-## 🛠️ Installation
+     ```bash
+     # For filesystem operations
+     npm install -g @modelcontextprotocol/server-filesystem
 
-1. **Clone the repository:**
+     # For web research
+     npm install -g @mzxrai/mcp-webresearch
+     ```
+
+2. **Clone and install:**
+
    ```bash
    git clone https://github.com/ausboss/mcp-ollama-agent.git
    cd mcp-ollama-agent
-   ```
-2. **Install dependencies:**
-   ```bash
    npm install
-   # or
-   yarn install
+
+   ```
+
+3. **Configure your tools and tool supported Ollama model in `mcp-config.json`:**
+
+   ```json
+   {
+     "mcpServers": {
+       "filesystem": {
+         "command": "npx",
+         "args": ["@modelcontextprotocol/server-filesystem", "./"]
+       },
+       "webresearch": {
+         "command": "npx",
+         "args": ["-y", "@mzxrai/mcp-webresearch"]
+       }
+     },
+     "ollama": {
+       "host": "http://localhost:11434",
+       "model": "qwen2.5:latest"
+     }
+   }
+   ```
+
+4. **Run the demo to test filesystem and webresearch tools without an LLM:**
+
+   ```bash
+   npx tsx ./src/demo.ts
+   ```
+
+5. **Or start the chat interface with Ollama:**
+   ```bash
+   npm start
    ```
 
 ## ⚙️ Configuration
 
-The project's configuration is managed through the `mcp-config.json` file at the root of the project.
+- **MCP Servers:** Add any MCP-compatible server to the `mcpServers` section
+- **Ollama:** Configure host and model (must support function calling)
+- Supports both Python (uvx) and Node.js (npx) MCP servers
 
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-filesystem", "./"]
-    }
-  },
-  "ollama": {
-    "host": "http://localhost:11434",
-    "model": "qwen2.5:latest"
-  }
-}
-```
+## 💡 Example Usage
 
-- **`mcpServers`:** This section defines your MCP servers.
-  - **`filesystem`:** This is the configuration for the Filesystem MCP Server.
-    - **`command`:** The command to execute the server. Here, we are using `npx` to run the globally installed `@modelcontextprotocol/server-filesystem` package. You can also directly specify the path to the `node` executable if you prefer to run the server script directly.
-    - **`args`:** An array of arguments passed to the command. In this case, `./` specifies the root directory that the Filesystem MCP Server will have access to. **Adjust this path carefully to control the server's access.**
-- **`ollama`:** This section configures the connection to your Ollama server.
-  - **`host`:** The address of your Ollama server. The default is `http://localhost:11434`.
-  - **`model`:** The name of the Ollama model you want to use. **Ensure this model supports tool calling (functions).** Popular models like `qwen2.5:latest` often have this capability. You can check the model's documentation or Ollama's available models.
-
-**Important:**
-
-- **Filesystem Access:** Be cautious when configuring the `args` for the Filesystem MCP Server. The path specified here determines the directories the AI agent will be able to interact with. Avoid giving access to sensitive areas.
-- **Ollama Model:** Ensure the specified Ollama model supports the concept of "tools" or "functions" in its API. This is crucial for the integration to work correctly.
-
-## ▶️ Running the Application
-
-To start the interactive chat with the Ollama agent, run the following command:
+This example used this model [qwen2.5:latest](https://ollama.com/library/qwen2.5)
 
 ```bash
-npm run start
-# or
-yarn start
+Chat started. Type "exit" to end the conversation.
+You: can you use your list directory tool to see whats in test-directory then use your read file tool to read it to me?
+Model is using tools to help answer...
+Using tool: list_directory
+With arguments: { path: 'test-directory' }
+Tool result: [ { type: 'text', text: '[FILE] test.txt' } ]
+Assistant:
+Model is using tools to help answer...
+Using tool: read_file
+With arguments: { path: 'test-directory/test.txt' }
+Tool result: [ { type: 'text', text: 'rosebud' } ]
+Assistant: The content of the file `test.txt` in the `test-directory` is:
+rosebud
+You: thanks
+Assistant: You're welcome! If you have any other requests or need further assistance, feel free to ask.
 ```
 
-This command will:
+# Advanced Configuration
 
-1. Start the Filesystem MCP Server (as configured in `mcp-config.json`).
-2. Connect to the MCP server.
-3. Fetch the available tools from the server.
-4. Initialize the Ollama agent with the fetched tools.
-5. Start an interactive chat session where you can provide prompts to the agent.
+## System Prompts
 
-You will see output indicating the connection to the filesystem server and then a prompt to enter your questions.
-
-## 💬 Usage
-
-Once the application is running, you can interact with the Ollama agent by typing prompts in the terminal. The agent can use the available filesystem tools to perform tasks based on your instructions.
-
-**Example Interactions:**
-
-```
-🚀 Chatting with Ollama model: qwen2.5:latest
-Type 'exit' to quit.
-
-You: hi
-Assistant: Hello! How can I assist you today? If you need to perform any file operations or explore the directory structure, feel free to provide more details.
-You: what is inside of the test-files folder?
-Attempt 1/5
-Tool 'list_directory' with args: {"path":"c:\\users\\austi\\desktop\\mcp-example\\test-files"}
-Assistant: The `test-files` folder contains a single file named `test.txt`. Would you like to see the contents of this file or perform any other operations with it?
-You: yes
-Attempt 1/5
-Tool 'read_file' with args: {"path":"c:\\users\\austi\\desktop\\mcp-example\\test-files\\test.txt"}
-Assistant: The content of `test.txt` is as follows:
-
-
-poopoo peepepe
-
-
-Would you like to perform any further operations with this file?
-You: no
-Assistant: Alright! If you need help with anything else, feel free to ask.
-```
-
-The agent will attempt to understand your requests and, if necessary, use the available filesystem tools (like `list_directory`, `read_file`) to fulfill them.
+Some local models may need help with tool selection. Customize the system prompt in `ChatManager.ts` to improve tool usage:
 
 ## 🤝 Contributing
 
-Contributions to this project are welcome! Please feel free to submit pull requests with improvements or bug fixes. For major changes, please open an issue first to discuss what you would like to change.
+Contributions welcome! Feel free to submit issues or pull requests.
