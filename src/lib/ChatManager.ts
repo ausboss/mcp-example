@@ -143,11 +143,7 @@ export class ChatManager {
       );
 
       // Fix parameters using the suggested mappings
-      const fixedArgs = this.fixToolArguments(
-        toolCall.function.name,
-        args,
-        parameterMappings
-      );
+      const fixedArgs = this.fixToolArguments(args, parameterMappings);
       const result = await this.toolManager.callTool(
         toolCall.function.name,
         fixedArgs
@@ -209,7 +205,7 @@ export class ChatManager {
                 await this.handleToolCalls(newToolCalls);
               } else {
                 console.log(
-                  "Assistant: I apologize, but I'm having trouble with the correct parameter format. Let me try a different approach."
+                  "There was an issue with the tool call. Trying again."
                 );
                 return;
               }
@@ -305,7 +301,6 @@ export class ChatManager {
   }
 
   private fixToolArguments(
-    toolName: string,
     args: Record<string, unknown>,
     mappings: Record<string, string>
   ): Record<string, unknown> {

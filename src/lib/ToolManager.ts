@@ -3,40 +3,24 @@
 import {
   CallToolResult,
   CallToolResultSchema,
+  ListToolsResultSchema,
 } from "@modelcontextprotocol/sdk/types";
+import {
+  McpClientEntry,
+  ToolCall,
+  ToolDefinition,
+} from "../utils/types/toolTypes";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index";
 import { convertToOpenaiTools } from "../utils/toolFormatters";
 import { createMcpClients } from "../utils/mcpClient";
-import { fetchTools } from "../utils/toolUtils";
 import { formatToolResponse } from "../utils/toolFormatters";
-
-// Define interface for client structure
-interface McpClientEntry {
-  client: Client;
-  transport: any; // Type could be made more specific based on transport type
-}
-
-interface ToolParameterInfo {
-  type: string;
-  description?: string;
-}
-
-interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters: {
-    properties: Record<string, ToolParameterInfo>;
-    required: string[];
-  };
-}
 
 export class ToolManager {
   private toolMap: Map<string, Client> = new Map();
   protected clients: Map<string, McpClientEntry> = new Map();
   public tools: any[] = [];
 
-  // Add getter method for clients
   getClients(): Map<string, McpClientEntry> {
     return this.clients;
   }
@@ -52,7 +36,7 @@ export class ToolManager {
 
     // Fetch tools from all clients
     for (const [serverName, { client }] of this.clients.entries()) {
-      const mcpTools = await fetchTools(client);
+      const mcpTools = await this.fetchTools(client);
       if (mcpTools) {
         allMcpTools = allMcpTools.concat(mcpTools);
         mcpTools.forEach((tool) => {
@@ -64,6 +48,29 @@ export class ToolManager {
     // Convert to OpenAI format for Ollama
     this.tools = convertToOpenaiTools(allMcpTools);
     return this.tools;
+  }
+
+  private async fetchTools(client: Client): Promise<any[] | null> {
+    try {
+      const toolsResponse = await client.request(
+        { method: "tools/list", params: {} },
+        ListToolsResultSchema
+      );
+      const tools = toolsResponse?.tools || [];
+
+      if (
+        !Array.isArray(tools) ||
+        !tools.every((tool) => typeof tool === "object")
+      ) {
+        console.debug("Invalid tools format received.");
+        return null;
+      }
+
+      return tools;
+    } catch (error) {
+      console.error("Error fetching tools:", error);
+      return null;
+    }
   }
 
   private async callToolWithTimeout(
@@ -118,65 +125,53 @@ export class ToolManager {
     }
   }
 
-  async handleToolCall(toolCall: any): Promise<string> {
+  async executeToolCall(toolCall: ToolCall): Promise<string> {
+    const { name, args } = this.parseToolCall(toolCall);
+    const client = this.toolMap.get(name);
+
+    if (!client) {
+      throw new Error(`Tool '${name}' not found`);
+    }
+
+    const result = await this.callToolWithTimeout(client, name, args);
+    return formatToolResponse((result as any)?.content || []);
+  }
+
+  private parseToolCall(toolCall: any): { name: string; args: any } {
     let toolName = "unknown_tool";
     let rawArguments: any = {};
 
-    try {
-      if (
-        (typeof toolCall === "object" &&
-          toolCall !== null &&
-          "function" in toolCall) ||
-        (toolCall?.function?.name && toolCall?.function?.arguments)
-      ) {
-        if (toolCall.function?.name) {
-          toolName = toolCall.function.name;
-          rawArguments = toolCall.function.arguments;
-        } else {
-          toolName = toolCall["function"]["name"];
-          rawArguments = toolCall["function"]["arguments"];
-        }
+    if (
+      (typeof toolCall === "object" &&
+        toolCall !== null &&
+        "function" in toolCall) ||
+      (toolCall?.function?.name && toolCall?.function?.arguments)
+    ) {
+      if (toolCall.function?.name) {
+        toolName = toolCall.function.name;
+        rawArguments = toolCall.function.arguments;
       } else {
-        console.warn("Invalid tool call format provided.");
-        return "";
+        toolName = toolCall["function"]["name"];
+        rawArguments = toolCall["function"]["arguments"];
       }
-
-      let toolArgs: any = rawArguments;
-      if (typeof rawArguments === "string") {
-        try {
-          toolArgs = JSON.parse(rawArguments);
-        } catch (error: any) {
-          console.debug(
-            `Error parsing arguments string: ${error.message}`,
-            rawArguments
-          );
-          throw error;
-        }
-      }
-
-      const client = this.toolMap.get(toolName);
-      if (!client) {
-        throw new Error(`Tool '${toolName}' not found`);
-      }
-
-      const toolResponse = await this.callToolWithTimeout(
-        client,
-        toolName,
-        toolArgs
-      );
-      return formatToolResponse((toolResponse as any)?.content || []);
-    } catch (error: any) {
-      if (error.name === "SyntaxError") {
-        console.debug(
-          `Error decoding arguments for tool '${toolName}': ${rawArguments}`
-        );
-      } else {
-        console.debug(
-          `Error handling tool call '${toolName}': ${error.message}`
-        );
-      }
-      throw error;
+    } else {
+      throw new Error("Invalid tool call format provided.");
     }
+
+    let toolArgs: any = rawArguments;
+    if (typeof rawArguments === "string") {
+      try {
+        toolArgs = JSON.parse(rawArguments);
+      } catch (error: any) {
+        console.debug(
+          `Error parsing arguments string: ${error.message}`,
+          rawArguments
+        );
+        throw error;
+      }
+    }
+
+    return { name: toolName, args: toolArgs };
   }
 
   async callTool(

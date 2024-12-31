@@ -1,15 +1,9 @@
 // src/demo.ts
 
-import {
-  convertToOpenaiTools,
-  formatToolResponse,
-} from "./utils/toolFormatters";
-
 import { ToolManager } from "./lib/ToolManager";
-import { fetchTools } from "./utils/toolUtils";
+import { formatToolResponse } from "./utils/toolFormatters";
 
 async function demonstrateMcpFunctionality() {
-  let allMcpTools: any[] = [];
   let toolManager: ToolManager | undefined;
 
   try {
@@ -25,21 +19,9 @@ async function demonstrateMcpFunctionality() {
       return;
     }
 
-    // Fetch tools from all clients and combine them
-    for (const [serverName, { client }] of clients.entries()) {
-      console.log(`\n📚 Fetching MCP tools for ${serverName}...`);
-      const mcpTools = await fetchTools(client);
-      if (mcpTools) {
-        allMcpTools = allMcpTools.concat(mcpTools);
-      } else {
-        console.log(`❌ No tools fetched from MCP server ${serverName}.`);
-      }
-    }
-
-    // Display all combined tools in OpenAI format
-    const openaiTools = convertToOpenaiTools(allMcpTools);
+    // Display all tools in OpenAI format
     console.log("\n✨ All combined tools in OpenAI format:");
-    console.log(JSON.stringify(openaiTools, null, 2));
+    console.log(JSON.stringify(toolManager.tools, null, 2));
 
     // Example interactions using ToolManager
     console.log("\n📂 Listing allowed directories (if available)...");
