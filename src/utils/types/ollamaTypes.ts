@@ -1,15 +1,20 @@
 // ollamaTypes.ts
+// Types for Ollama API integration
 
-export interface OllamaToolCall {
+import { ToolCall } from "./toolTypes";
+
+/**
+ * Represents a tool call in Ollama's format
+ */
+export interface OllamaToolCall extends Omit<ToolCall, "id"> {
   type: "function";
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
 }
 
+/**
+ * Represents a message in the Ollama chat format
+ */
 export interface OllamaMessage {
-  role: string;
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   tool_calls?: OllamaToolCall[];
   tool_call_id?: string;
