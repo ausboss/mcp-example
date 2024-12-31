@@ -6,7 +6,7 @@ This project demonstrates integration between [Model Context Protocol (MCP)](htt
 
 - Supports multiple MCP servers (both uvx and npx tested)
 - Built-in support for file system operations and web research
-- Easy configuration through `mcp-config.json`
+- Easy configuration through `mcp-config.json` similar to `claude_desktop_config.json`
 - Interactive chat interface with Ollama integration that should support any tools
 - Standalone demo mode for testing web and filesystem tools without an LLM
 
@@ -95,11 +95,9 @@ You: thanks
 Assistant: You're welcome! If you have any other requests or need further assistance, feel free to ask.
 ```
 
-# Advanced Configuration
-
 ## System Prompts
 
-Some local models may need help with tool selection. Customize the system prompt in `ChatManager.ts` to improve tool usage:
+Some local models may need help with tool selection. Customize the system prompt in `ChatManager.ts` to improve tool usage.
 
 ## 🤝 Contributing
 
