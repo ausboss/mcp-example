@@ -77,7 +77,7 @@ This project demonstrates integration between [Model Context Protocol (MCP)](htt
 
 This example used this model [qwen2.5:latest](https://ollama.com/library/qwen2.5)
 
-```bash
+```
 Chat started. Type "exit" to end the conversation.
 You: can you use your list directory tool to see whats in test-directory then use your read file tool to read it to me?
 Model is using tools to help answer...
