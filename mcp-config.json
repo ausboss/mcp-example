@@ -3,6 +3,10 @@
     "filesystem": {
       "command": "npx",
       "args": ["@modelcontextprotocol/server-filesystem", "./"]
+    },
+    "webresearch": {
+      "command": "npx",
+      "args": ["-y", "@mzxrai/mcp-webresearch"]
     }
   },
   "ollama": {

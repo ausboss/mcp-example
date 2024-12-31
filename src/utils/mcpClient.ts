@@ -1,34 +1,49 @@
 // src/utils/mcpClient.ts
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { getDefaultEnvironment } from "./environment.js";
-import { getMcpServerConfig } from "../config/index.js";
-import { resolveCommand } from "./commandResolver.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio";
+import { getConfig } from "../config/index";
+import { getDefaultEnvironment } from "./environment";
+import { resolveCommand } from "./commandResolver";
 
-export async function createMcpClient(serverName: string) {
-  const config = getMcpServerConfig(serverName);
+export interface McpServerConfiguration {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  capabilities?: any;
+}
 
-  // Resolve the command to ensure it exists and is executable
-  const resolvedCommand = await resolveCommand(config.command);
+// src/utils/mcpClient.ts
+export async function createMcpClients() {
+  const config = getConfig(); // Get the full config
+  const clients = new Map<
+    string,
+    { client: Client; transport: StdioClientTransport }
+  >();
 
-  const transport = new StdioClientTransport({
-    command: resolvedCommand,
-    args: config.args || [],
-    env:
-      (config.env as Record<string, string> | undefined) ||
-      getDefaultEnvironment(),
-  });
+  for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
+    const resolvedCommand = await resolveCommand(serverConfig.command);
 
-  const client = new Client(
-    { name: "example-client", version: "1.0.0" },
-    {
-      capabilities: {
-        tools: { call: true, list: true },
-      },
-    }
-  );
+    const transport = new StdioClientTransport({
+      command: resolvedCommand,
+      args: serverConfig.args || [],
+      env:
+        (serverConfig.env as Record<string, string> | undefined) ||
+        getDefaultEnvironment(),
+    });
 
-  await client.connect(transport);
-  return { client, transport };
+    const client = new Client(
+      { name: `ollama-client-${serverName}`, version: "1.0.0" },
+      {
+        capabilities: {
+          tools: { call: true, list: true },
+        },
+      }
+    );
+
+    await client.connect(transport);
+    clients.set(serverName, { client, transport });
+  }
+
+  return clients;
 }

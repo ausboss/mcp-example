@@ -1,18 +1,22 @@
 // ollamaTypes.ts
+// Types for Ollama API integration
 
-export interface ManagerResponse {
-  status: "CONTINUE" | "END" | "ERROR";
-  reasoning: string;
-  nextPrompt?: string;
+import { ToolCall } from "./toolTypes";
+
+/**
+ * Represents a tool call in Ollama's format
+ */
+export interface OllamaToolCall extends Omit<ToolCall, "id"> {
+  type: "function";
 }
 
-export interface ModelResponse {
+/**
+ * Represents a message in the Ollama chat format
+ */
+export interface OllamaMessage {
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
-  tool_calls?: Array<{
-    id: string;
-    function: {
-      name: string;
-      arguments: any;
-    };
-  }>;
+  tool_calls?: OllamaToolCall[];
+  tool_call_id?: string;
+  name?: string;
 }

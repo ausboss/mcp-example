@@ -1,77 +1,88 @@
-// run this with npx `tsx .\src\demo.ts` to see the functions in
+// src/demo.ts
 
-import {
-  convertToOpenaiTools,
-  fetchTools,
-  formatToolResponse,
-} from "./utils/toolHelpers.js";
-
-import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { callToolWithTimeout } from "./utils/toolUtils.js";
-import { createMcpClient } from "./utils/mcpClient.js";
+import { ToolManager } from "./lib/ToolManager";
+import { formatToolResponse } from "./utils/toolFormatters";
 
 async function demonstrateMcpFunctionality() {
-  let client: Client | undefined;
-  let transport: StdioClientTransport | undefined;
+  let toolManager: ToolManager | undefined;
 
   try {
-    console.log("\n🚀 Creating MCP client...");
-    const mcpResult = await createMcpClient("filesystem");
-    client = mcpResult.client;
-    transport = mcpResult.transport;
+    // Create and initialize ToolManager
+    console.log("\n🚀 Creating MCP clients and initializing ToolManager...");
+    toolManager = new ToolManager();
+    await toolManager.initialize();
 
-    // Fetch and display tools as OpenAI format
-    console.log("\n📚 Fetching MCP tools...");
-    const mcpTools = await fetchTools(client);
-    if (!mcpTools) {
-      console.log("❌ No tools fetched from MCP.");
+    // Get the clients from ToolManager's initialization
+    const clients = toolManager.getClients();
+    if (!clients || clients.size === 0) {
+      console.log("❌ No MCP clients loaded.");
       return;
     }
-    const openaiTools = convertToOpenaiTools(mcpTools);
-    console.log("\nTools in OpenAI format:");
-    console.log(JSON.stringify(openaiTools, null, 2));
 
-    // List allowed directories
-    console.log("\n📂 Listing allowed directories...");
-    const allowedDirsResponse = (await callToolWithTimeout(
-      client,
+    // Display all tools in OpenAI format
+    console.log("\n✨ All combined tools in OpenAI format:");
+    console.log(JSON.stringify(toolManager.tools, null, 2));
+
+    // Example interactions using ToolManager
+    console.log("\n📂 Listing allowed directories (if available)...");
+    const allowedDirsResponse = await toolManager.callTool(
       "list_allowed_directories",
       {}
-    )) as CallToolResult;
-    console.log(
-      "Allowed directories:",
-      formatToolResponse(allowedDirsResponse.content)
     );
+    if (allowedDirsResponse) {
+      console.log(
+        "Allowed directories:",
+        formatToolResponse(allowedDirsResponse.content)
+      );
+    }
 
-    // List contents of test-files directory
-    console.log("\n📂 Listing contents of test-files directory...");
-    const dirContents = (await callToolWithTimeout(client, "list_directory", {
-      path: "test-files",
-    })) as CallToolResult;
-    console.log("Directory contents:", formatToolResponse(dirContents.content));
+    console.log(
+      "\n📂 Listing contents of test-directory directory (if available)..."
+    );
+    const dirContents = await toolManager.callTool("list_directory", {
+      path: "test-directory",
+    });
+    if (dirContents) {
+      console.log(
+        "Directory contents:",
+        formatToolResponse(dirContents.content)
+      );
+    }
 
-    // Read test.txt file
-    console.log("\n📄 Reading test.txt...");
-    const fileContent = (await callToolWithTimeout(client, "read_file", {
-      path: "test-files/test.txt",
-    })) as CallToolResult;
-    console.log("File content:", formatToolResponse(fileContent.content));
+    console.log("\n📄 Reading test.txt (if available)...");
+    const fileContent = await toolManager.callTool("read_file", {
+      path: "test-directory/test.txt",
+    });
+    if (fileContent) {
+      console.log("File content:", formatToolResponse(fileContent.content));
+    }
+
+    // Visit a webpage and get the content
+    console.log("\n🌐 Visiting example.com and getting content...");
+    const webpageContent = await toolManager.callTool("visit_page", {
+      url: "https://ollama.com/blog/tool-support",
+      takeScreenshot: false,
+    });
+    if (webpageContent) {
+      console.log(
+        "Webpage content:",
+        formatToolResponse(webpageContent.content)
+      );
+    }
   } catch (error: unknown) {
     console.error(
-      "\n❌ An error occurred:",
+      "\n❌ An error occurred during demonstration:",
       error instanceof Error ? error.message : String(error)
     );
   } finally {
-    // Clean up
-    if (client) await client.close();
-    if (transport) await transport.close();
+    // Clean up using ToolManager's cleanup
+    if (toolManager) {
+      await toolManager.cleanup();
+    }
     process.exit(0);
   }
 }
 
-// Run the demonstration
 demonstrateMcpFunctionality().catch((error) =>
-  console.error("Fatal error:", error)
+  console.error("Fatal error during demonstration setup:", error)
 );
