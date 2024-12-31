@@ -1,7 +1,15 @@
-import { convertToOpenaiTools, fetchTools } from "../utils/toolHelpers";
-import { CallToolResult } from "@modelcontextprotocol/sdk/types";
+// lib/ToolManager.ts
+
+import {
+  CallToolResult,
+  CallToolResultSchema,
+} from "@modelcontextprotocol/sdk/types";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index";
+import { convertToOpenaiTools } from "../utils/toolFormatters";
 import { createMcpClients } from "../utils/mcpClient";
+import { fetchTools } from "../utils/toolUtils";
+import { formatToolResponse } from "../utils/toolFormatters";
 
 // Define interface for client structure
 interface McpClientEntry {
@@ -20,13 +28,18 @@ interface ToolDefinition {
   parameters: {
     properties: Record<string, ToolParameterInfo>;
     required: string[];
-  }
+  };
 }
 
 export class ToolManager {
   private toolMap: Map<string, Client> = new Map();
-  private clients: Map<string, McpClientEntry> = new Map();
+  protected clients: Map<string, McpClientEntry> = new Map();
   public tools: any[] = [];
+
+  // Add getter method for clients
+  getClients(): Map<string, McpClientEntry> {
+    return this.clients;
+  }
 
   async initialize() {
     const newClients = await createMcpClients();
@@ -53,6 +66,119 @@ export class ToolManager {
     return this.tools;
   }
 
+  private async callToolWithTimeout(
+    client: Client,
+    name: string,
+    args: any,
+    timeoutMs = 30000
+  ): Promise<unknown> {
+    // Parse arguments if they're a string
+    let parsedArgs = args;
+    if (typeof args === "string") {
+      try {
+        parsedArgs = JSON.parse(args);
+      } catch (e) {
+        // If parsing fails, wrap the string in an object
+        parsedArgs = { value: args };
+      }
+    }
+
+    // Ensure args is an object
+    if (typeof parsedArgs !== "object" || parsedArgs === null) {
+      parsedArgs = {};
+    }
+
+    const toolCallPromise = client.request(
+      {
+        method: "tools/call",
+        params: {
+          name,
+          arguments: parsedArgs,
+        },
+      },
+      CallToolResultSchema
+    );
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error(`Tool call timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      );
+    });
+
+    try {
+      const result = await Promise.race([toolCallPromise, timeoutPromise]);
+      return result;
+    } catch (error) {
+      throw new Error(
+        `Tool call failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async handleToolCall(toolCall: any): Promise<string> {
+    let toolName = "unknown_tool";
+    let rawArguments: any = {};
+
+    try {
+      if (
+        (typeof toolCall === "object" &&
+          toolCall !== null &&
+          "function" in toolCall) ||
+        (toolCall?.function?.name && toolCall?.function?.arguments)
+      ) {
+        if (toolCall.function?.name) {
+          toolName = toolCall.function.name;
+          rawArguments = toolCall.function.arguments;
+        } else {
+          toolName = toolCall["function"]["name"];
+          rawArguments = toolCall["function"]["arguments"];
+        }
+      } else {
+        console.warn("Invalid tool call format provided.");
+        return "";
+      }
+
+      let toolArgs: any = rawArguments;
+      if (typeof rawArguments === "string") {
+        try {
+          toolArgs = JSON.parse(rawArguments);
+        } catch (error: any) {
+          console.debug(
+            `Error parsing arguments string: ${error.message}`,
+            rawArguments
+          );
+          throw error;
+        }
+      }
+
+      const client = this.toolMap.get(toolName);
+      if (!client) {
+        throw new Error(`Tool '${toolName}' not found`);
+      }
+
+      const toolResponse = await this.callToolWithTimeout(
+        client,
+        toolName,
+        toolArgs
+      );
+      return formatToolResponse((toolResponse as any)?.content || []);
+    } catch (error: any) {
+      if (error.name === "SyntaxError") {
+        console.debug(
+          `Error decoding arguments for tool '${toolName}': ${rawArguments}`
+        );
+      } else {
+        console.debug(
+          `Error handling tool call '${toolName}': ${error.message}`
+        );
+      }
+      throw error;
+    }
+  }
+
   async callTool(
     toolName: string,
     args: Record<string, unknown>
@@ -76,26 +202,29 @@ export class ToolManager {
     }
   }
 
-  // Get parameter info for a specific tool
   getToolParameterInfo(toolName: string): ToolDefinition | undefined {
-    return this.tools.find(t => t.name === toolName);
+    return this.tools.find((t) => t.name === toolName);
   }
 
-  // Suggest parameter mapping for provided arguments
-  suggestParameterMapping(toolName: string, providedArgs: Record<string, unknown>): Record<string, string> {
+  suggestParameterMapping(
+    toolName: string,
+    providedArgs: Record<string, unknown>
+  ): Record<string, string> {
     const tool = this.getToolParameterInfo(toolName);
     if (!tool) return {};
 
     const mapping: Record<string, string> = {};
     const expectedParams = Object.keys(tool.parameters.properties);
-    
+
     for (const providedParam of Object.keys(providedArgs)) {
       if (expectedParams.includes(providedParam)) {
         continue; // Parameter is already correct
       }
 
-      // Find most similar parameter name
-      const mostSimilar = this.findMostSimilarParameter(providedParam, expectedParams);
+      const mostSimilar = this.findMostSimilarParameter(
+        providedParam,
+        expectedParams
+      );
       if (mostSimilar) {
         mapping[providedParam] = mostSimilar;
       }
@@ -104,12 +233,17 @@ export class ToolManager {
     return mapping;
   }
 
-  private findMostSimilarParameter(provided: string, expected: string[]): string | null {
-    // Simple string similarity check
-    const normalized = provided.toLowerCase().replace(/[_-]/g, '');
+  private findMostSimilarParameter(
+    provided: string,
+    expected: string[]
+  ): string | null {
+    const normalized = provided.toLowerCase().replace(/[_-]/g, "");
     for (const param of expected) {
-      const normalizedExpected = param.toLowerCase().replace(/[_-]/g, '');
-      if (normalizedExpected.includes(normalized) || normalized.includes(normalizedExpected)) {
+      const normalizedExpected = param.toLowerCase().replace(/[_-]/g, "");
+      if (
+        normalizedExpected.includes(normalized) ||
+        normalized.includes(normalizedExpected)
+      ) {
         return param;
       }
     }

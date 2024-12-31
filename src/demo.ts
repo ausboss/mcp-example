@@ -2,27 +2,24 @@
 
 import {
   convertToOpenaiTools,
-  fetchTools,
   formatToolResponse,
-} from "./utils/toolHelpers.js";
+} from "./utils/toolFormatters";
 
-import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { callToolWithTimeout } from "./utils/toolUtils.js";
-import { createMcpClients } from "./utils/mcpClient.js";
+import { ToolManager } from "./lib/ToolManager";
+import { fetchTools } from "./utils/toolUtils";
 
 async function demonstrateMcpFunctionality() {
-  let clients:
-    | Map<string, { client: Client; transport: StdioClientTransport }>
-    | undefined;
   let allMcpTools: any[] = [];
-  const toolMap: Map<string, Client> = new Map(); // Map tool name to client
+  let toolManager: ToolManager | undefined;
 
   try {
-    console.log("\n🚀 Creating MCP clients...");
-    clients = await createMcpClients();
+    // Create and initialize ToolManager
+    console.log("\n🚀 Creating MCP clients and initializing ToolManager...");
+    toolManager = new ToolManager();
+    await toolManager.initialize();
 
+    // Get the clients from ToolManager's initialization
+    const clients = toolManager.getClients();
     if (!clients || clients.size === 0) {
       console.log("❌ No MCP clients loaded.");
       return;
@@ -34,9 +31,6 @@ async function demonstrateMcpFunctionality() {
       const mcpTools = await fetchTools(client);
       if (mcpTools) {
         allMcpTools = allMcpTools.concat(mcpTools);
-        mcpTools.forEach((tool) => {
-          toolMap.set(tool.name, client); // Map tool name to its client
-        });
       } else {
         console.log(`❌ No tools fetched from MCP server ${serverName}.`);
       }
@@ -47,33 +41,9 @@ async function demonstrateMcpFunctionality() {
     console.log("\n✨ All combined tools in OpenAI format:");
     console.log(JSON.stringify(openaiTools, null, 2));
 
-    // Helper function to call a tool, finding the right client
-    const callAnyTool = async (
-      toolName: string,
-      args: any
-    ): Promise<CallToolResult | undefined> => {
-      const clientForTool = toolMap.get(toolName);
-      if (clientForTool) {
-        console.log(`\n🛠️ Calling tool '${toolName}'...`);
-        try {
-          return (await callToolWithTimeout(
-            clientForTool,
-            toolName,
-            args
-          )) as CallToolResult;
-        } catch (error) {
-          console.error(`❌ Error calling tool '${toolName}':`, error);
-          return undefined;
-        }
-      } else {
-        console.warn(`⚠️ Tool '${toolName}' not found among available tools.`);
-        return undefined;
-      }
-    };
-
-    // Example interactions - these will now use the combined set of tools
+    // Example interactions using ToolManager
     console.log("\n📂 Listing allowed directories (if available)...");
-    const allowedDirsResponse = await callAnyTool(
+    const allowedDirsResponse = await toolManager.callTool(
       "list_allowed_directories",
       {}
     );
@@ -85,10 +55,10 @@ async function demonstrateMcpFunctionality() {
     }
 
     console.log(
-      "\n📂 Listing contents of test-files directory (if available)..."
+      "\n📂 Listing contents of test-directory directory (if available)..."
     );
-    const dirContents = await callAnyTool("list_directory", {
-      path: "test-files",
+    const dirContents = await toolManager.callTool("list_directory", {
+      path: "test-directory",
     });
     if (dirContents) {
       console.log(
@@ -98,8 +68,8 @@ async function demonstrateMcpFunctionality() {
     }
 
     console.log("\n📄 Reading test.txt (if available)...");
-    const fileContent = await callAnyTool("read_file", {
-      path: "test-files/test.txt",
+    const fileContent = await toolManager.callTool("read_file", {
+      path: "test-directory/test.txt",
     });
     if (fileContent) {
       console.log("File content:", formatToolResponse(fileContent.content));
@@ -107,7 +77,7 @@ async function demonstrateMcpFunctionality() {
 
     // Visit a webpage and get the content
     console.log("\n🌐 Visiting example.com and getting content...");
-    const webpageContent = await callAnyTool("visit_page", {
+    const webpageContent = await toolManager.callTool("visit_page", {
       url: "https://ollama.com/blog/tool-support",
       takeScreenshot: false,
     });
@@ -123,12 +93,9 @@ async function demonstrateMcpFunctionality() {
       error instanceof Error ? error.message : String(error)
     );
   } finally {
-    // Clean up all clients
-    if (clients) {
-      for (const { client, transport } of clients.values()) {
-        await client.close();
-        await transport.close();
-      }
+    // Clean up using ToolManager's cleanup
+    if (toolManager) {
+      await toolManager.cleanup();
     }
     process.exit(0);
   }
